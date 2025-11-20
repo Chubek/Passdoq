@@ -14,8 +14,8 @@ typedef struct PDQ_SafeMemory
   size_t item_count;
   size_t total_size;
   bool locked : 1;
-  bool readwrite : 1;
-  bool access : 1;
+  bool readonly : 1;
+  bool noaccess : 1;
 } PDQ_SafeMemory;
 
 typedef struct PDQ_SafeString
@@ -38,8 +38,10 @@ PDQ_SafeMemory *pdq_safemem_delete (PDQ_SafeMemory *smem);
 PDQ_SafeMemory *pdq_safemem_resize (PDQ_SafeMemory *smem, size_t new_count);
 void pdq_safemem_lock (PDQ_SafeMemory *smem);
 void pdq_safemem_unlock (PDQ_SafeMemory *smem);
-void pdq_safemem_protect (PDQ_SafeMemory *smem, bool readwrite, bool access);
-void pdq_safemem_unprotect (PDQ_SafeMemory *smem);
+void pdq_safemem_readonly (PDQ_SafeMemory *smem);
+void pdq_safemem_readwrite (PDQ_SafeMemory *smem);
+void pdq_safemem_noaccess (PDQ_SafeMemory *smem);
+void pdq_safemem_access (PDQ_SafeMemory *smem);
 
 PDQ_SafeString *pdq_safestring_new (void);
 void pdq_safestring_delete (PDQ_SafeString *sstr);
