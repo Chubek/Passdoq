@@ -230,8 +230,6 @@ sudo make install
 └──────────────────────────────────────────────────┘
 ```
 
-See `AGENTS.md` for detailed architecture documentation.
-
 ---
 
 ## Security Model
