@@ -32,6 +32,45 @@ Passdoq is a secure, extensible CLI-based password and token manager written in 
 - **RPC Server**: Remote vault access via rpclib
 - **Secret Delivery**: Multiple delivery methods (clipboard, file, stdout, memory)
 
+## Quick Start
+
+### Build from Source
+
+All dependencies are bundled in `third_party/`:
+
+```bash
+# 1. Build dependencies
+./build_dependencies.sh
+
+# 2. Build Passdoq
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+
+# 3. Run tests
+ctest
+```
+
+For detailed build instructions, see [BUILD.md](BUILD.md).
+
+### First Use
+
+```bash
+# Initialize vault
+./build/passdoq init
+
+# Add an entry
+./build/passdoq add
+
+# List entries
+./build/passdoq list
+
+# Search
+./build/passdoq search
+```
+
+For detailed usage, see [QUICKSTART.md](QUICKSTART.md).
+
 ## Architecture
 
 ```
@@ -48,45 +87,64 @@ Passdoq is a secure, extensible CLI-based password and token manager written in 
 
 ## Dependencies
 
+All dependencies are included in `third_party/`:
+
 ### Required
-- libsodium (crypto)
-- msgpack (serialization)
-- C++17 compiler
+- **libsodium** - Cryptography
+- **msgpack11** - Serialization (header-only)
+- **CLI11** - CLI parsing (header-only)
+- **PEGTL** - Parser (header-only)
 
 ### Optional
-- CLI11 (CLI interface)
-- Xapian (search/indexing)
-- Lua 5.3+ (scripting)
-- Sol2 (Lua bindings)
-- libltdl (module loading)
-- rpclib (RPC)
-- Catch2 v3 (testing)
+- **Xapian** - Search/indexing (Stage 3)
+- **Lua** - Scripting (Stage 4)
+- **Sol2** - Lua bindings (Stage 4, header-only)
+- **libltdl** - Module loading (Stage 4)
+- **rpclib** - RPC (Stage 5)
+- **Catch2** - Testing (system package)
 
 ## Building
 
-### CMake
+### Standard Build
 
 ```bash
+./build_dependencies.sh
 mkdir build && cd build
 cmake ..
-make
+make -j$(nproc)
 ```
 
 ### Build Options
 
 ```bash
-cmake -DBUILD_STAGE_1=ON \   # Core vault + crypto
-      -DBUILD_STAGE_2=ON \   # CLI + runcom
-      -DBUILD_STAGE_3=ON \   # Indexing + search
-      -DBUILD_STAGE_4=ON \   # Modules + Lua
-      -DBUILD_STAGE_5=ON \   # Services + RPC
-      -DBUILD_TESTS=ON ..
+cmake .. \
+  -DBUILD_STAGE_1=ON \   # Core vault + crypto
+  -DBUILD_STAGE_2=ON \   # CLI + runcom
+  -DBUILD_STAGE_3=ON \   # Indexing + search
+  -DBUILD_STAGE_4=ON \   # Modules + Lua
+  -DBUILD_STAGE_5=ON \   # Services + RPC
+  -DBUILD_TESTS=ON       # Build tests
 ```
 
-### Running Tests
+### Minimal Build (Core Only)
 
 ```bash
-ctest --test-dir build
+cd third_party/libsodium
+./autogen.sh && ./configure && make -j$(nproc)
+cd ../..
+
+mkdir build && cd build
+cmake .. -DBUILD_STAGE_1=ON -DBUILD_STAGE_2=OFF -DBUILD_STAGE_3=OFF -DBUILD_STAGE_4=OFF -DBUILD_STAGE_5=OFF
+make -j$(nproc)
+```
+
+See [BUILD.md](BUILD.md) for complete build documentation.
+
+## Testing
+
+```bash
+cd build
+ctest
 ```
 
 Or run individual test suites:
@@ -101,178 +159,109 @@ Or run individual test suites:
 
 ## Usage
 
-### Initialize Vault
+### Basic Operations
 
 ```bash
+# Initialize vault
 passdoq init
-```
 
-### Add Entry
-
-```bash
+# Add entry
 passdoq add
-# Follow prompts for name, username, secret, tags
-```
 
-### Get Entry
-
-```bash
+# Get entry
 passdoq get
-# Enter entry ID
-```
 
-### Search
-
-```bash
-passdoq search
-# Enter search query
-```
-
-### List All Entries
-
-```bash
+# List all entries
 passdoq list
-```
 
-### Lock/Unlock
+# Search
+passdoq search
 
-```bash
+# Lock/unlock
 passdoq lock
 passdoq unlock
 ```
 
-## Configuration
+### Configuration
 
 Create `~/.passdoqrc`:
 
 ```
-vault_path = /home/user/.passdoq.vault
+vault_path = ~/.passdoq.vault
 timeout = 300
 auto_lock = true
 ```
 
-Or use `$XDG_CONFIG_HOME/passdoq/Passdoq.cnf`.
+### Modules
 
-## Modules
-
-### Loading Modules
-
-Modules are loaded automatically from `/usr/lib/passdoq/modules/` or can be specified in config:
-
-```
-module_path = /path/to/module.so
-```
-
-### Example: EphemeralDataKey
-
-Automatically rotates data keys on vault unlock:
-
-```c
-// Configured via runcom
-ephemeral.rotation_seconds = 300
-```
-
-## Lua Scripting
-
-### Example: Auto Copy and Mask
-
-```lua
-local passdoq = lpassdoq.init_addon({
-    name = "AutoCopyAndMask",
-    author = "Your Name"
-})
-
-passdoq.on("secret_retrieved", function(entry)
-    passdoq.clipboard_set(entry.value)
-    passdoq.print("Secret copied to clipboard")
-end)
-```
-
-Load scripts:
+Load the example plugin:
 
 ```bash
-passdoq --script /path/to/script.lua
+# Build plugin
+cd build
+make ephemeral_datakey
+
+# Configure
+echo 'module_path = ./ephemeral_datakey.so' >> ~/.passdoqrc
+echo 'ephemeral.rotation_seconds = 300' >> ~/.passdoqrc
 ```
 
-## RPC Server
-
-### Start Daemon
+### Lua Scripting
 
 ```bash
+passdoq --script examples/scripts/auto_copy_and_mask.lua
+```
+
+### RPC Server
+
+```bash
+# Start daemon
 passdoqd --port 8080
 ```
 
-### Remote Access
+## Documentation
 
-```cpp
-#include <passdoq/remote.hpp>
-
-passdoq::remote::RpcClient client("localhost", 8080);
-client.connect();
-client.unlock("password");
-
-std::string id = client.add_entry("GitHub", "user", "secret");
-```
-
-## Security Considerations
-
-- **Master Password**: Never stored, only used for key derivation
-- **Data Key**: Encrypted with master key, stored in vault header
-- **Memory Protection**: Sensitive data locked in memory, zeroed on cleanup
-- **Time-Limited Access**: Automatic vault locking after timeout
-- **No Plaintext Logs**: Secrets never written to logs
+- **[BUILD.md](BUILD.md)** - Detailed build instructions
+- **[QUICKSTART.md](QUICKSTART.md)** - Quick start guide
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Implementation details
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - Project status and completion
+- **[AGENTS.md](AGENTS.md)** - Architecture specification
 
 ## Project Structure
 
 ```
 passdoq/
-├── include/
-│   ├── passdoq-api.h       # Public C API
-│   └── passdoq-module.h    # Module interface
-├── src/
-│   ├── crypto.*            # Encryption layer
-│   ├── memory.*            # Secure memory
-│   ├── vault.*             # Vault core
-│   ├── cli.*               # CLI interface
-│   ├── runcom.*            # Config system
-│   ├── indexing.*          # Xapian indexing
-│   ├── search.*            # Search engine
-│   ├── modules.*           # Module loader
-│   ├── lua.*               # Lua embedding
-│   ├── services.*          # Service framework
-│   ├── daemon.*            # Daemon
-│   ├── delivery.*          # Secret delivery
-│   └── remote.*            # RPC
-├── tests/                  # Catch2 tests
-├── examples/
-│   ├── plugins/            # Example modules
-│   └── scripts/            # Example Lua scripts
-└── docs/                   # Documentation
+├── include/              # Public API headers
+├── src/                  # Implementation
+├── tests/                # Catch2 tests
+├── examples/             # Example plugins and scripts
+├── third_party/          # Bundled dependencies
+├── docs/                 # Documentation
+├── CMakeLists.txt        # Build configuration
+├── build_dependencies.sh # Dependency build script
+└── README.md            # This file
 ```
 
-## Implementation Stages
+## Implementation Status
 
-All 5 stages have been implemented:
+✅ **All 5 Stages Complete**
 
-✅ **Stage 1**: Core Vault + Crypto (Foundation)  
-✅ **Stage 2**: CLI + Runcom (Usable local tool)  
-✅ **Stage 3**: Indexing + Search (Fast metadata queries)  
-✅ **Stage 4**: Extensibility (Modules + Lua)  
-✅ **Stage 5**: Services + RPC (Distributed capabilities)
+- ✅ Stage 1: Core Vault + Crypto
+- ✅ Stage 2: CLI + Runcom
+- ✅ Stage 3: Indexing + Search
+- ✅ Stage 4: Modules + Lua
+- ✅ Stage 5: Services + RPC
 
-## Testing
+See [PROJECT_STATUS.md](PROJECT_STATUS.md) for details.
 
-Each stage includes comprehensive Catch2 tests:
+## Security
 
-- **Stage 1**: Crypto, memory, vault operations
-- **Stage 2**: Runcom parsing, CLI commands
-- **Stage 3**: Indexing, search queries
-- **Stage 4**: Module loading, Lua scripting
-- **Stage 5**: Services, daemon, delivery methods
-
-## License
-
-See LICENSE file for details.
+- Master password never stored
+- Data encrypted with XSalsa20-Poly1305
+- Keys derived with Argon2id
+- Memory locked and zeroed
+- Time-limited access
+- No plaintext in logs
 
 ## Contributing
 
@@ -282,14 +271,9 @@ Contributions welcome! Please ensure:
 - New features include tests
 - Security-sensitive code is auditable
 
-## Roadmap
+## License
 
-- [ ] GUI frontend
-- [ ] Browser extension
-- [ ] Mobile apps
-- [ ] Cloud sync (encrypted)
-- [ ] Hardware token support (YubiKey)
-- [ ] Biometric authentication
+See LICENSE file for details.
 
 ## Support
 

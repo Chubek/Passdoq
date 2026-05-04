@@ -14,64 +14,106 @@ option(BUILD_STAGE_3 "Build Stage 3: Indexing + Search" ON)
 option(BUILD_STAGE_4 "Build Stage 4: Modules + Lua" ON)
 option(BUILD_STAGE_5 "Build Stage 5: Services + RPC" ON)
 
-# Find dependencies
-find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 
-# libsodium
-pkg_check_modules(SODIUM REQUIRED libsodium)
+# Third-party dependencies from third_party/
+set(THIRD_PARTY_DIR ${CMAKE_SOURCE_DIR}/third_party)
 
-# msgpack
-find_path(MSGPACK_INCLUDE_DIR msgpack.hpp)
-if(NOT MSGPACK_INCLUDE_DIR)
-    message(FATAL_ERROR "msgpack not found")
+# libsodium
+set(SODIUM_INCLUDE_DIR ${THIRD_PARTY_DIR}/libsodium/src/libsodium/include)
+set(SODIUM_LIBRARY_DIR ${THIRD_PARTY_DIR}/libsodium/src/libsodium/.libs)
+find_library(SODIUM_LIBRARY sodium PATHS ${SODIUM_LIBRARY_DIR} NO_DEFAULT_PATH)
+if(NOT SODIUM_LIBRARY)
+    message(STATUS "libsodium not built, will need to build it first")
+    set(SODIUM_LIBRARY sodium)
 endif()
+
+# msgpack11
+set(MSGPACK_INCLUDE_DIR ${THIRD_PARTY_DIR}/msgpack11)
 
 # CLI11
-find_path(CLI11_INCLUDE_DIR CLI/CLI.hpp)
-if(NOT CLI11_INCLUDE_DIR)
-    message(WARNING "CLI11 not found, Stage 2 may not build")
-endif()
+set(CLI11_INCLUDE_DIR ${THIRD_PARTY_DIR}/CLI11/include)
+
+# PEGTL
+set(PEGTL_INCLUDE_DIR ${THIRD_PARTY_DIR}/PEGTL/include)
 
 # Xapian
-pkg_check_modules(XAPIAN xapian-core)
-if(NOT XAPIAN_FOUND)
-    message(WARNING "Xapian not found, Stage 3 will not build")
+set(XAPIAN_INCLUDE_DIR ${THIRD_PARTY_DIR}/xapian/xapian-core/include)
+set(XAPIAN_LIBRARY_DIR ${THIRD_PARTY_DIR}/xapian/xapian-core/.libs)
+find_library(XAPIAN_LIBRARY xapian PATHS ${XAPIAN_LIBRARY_DIR} NO_DEFAULT_PATH)
+if(XAPIAN_LIBRARY)
+    set(XAPIAN_FOUND TRUE)
+else()
+    message(WARNING "Xapian not built, Stage 3 will not build")
+    set(XAPIAN_FOUND FALSE)
 endif()
 
 # Lua
-pkg_check_modules(LUA lua5.3)
-if(NOT LUA_FOUND)
-    pkg_check_modules(LUA lua)
+set(LUA_INCLUDE_DIR ${THIRD_PARTY_DIR}/lua/src)
+set(LUA_LIBRARY_DIR ${THIRD_PARTY_DIR}/lua/src)
+find_library(LUA_LIBRARY lua PATHS ${LUA_LIBRARY_DIR} NO_DEFAULT_PATH)
+if(LUA_LIBRARY)
+    set(LUA_FOUND TRUE)
+else()
+    message(WARNING "Lua not built, Lua scripting will not be available")
+    set(LUA_FOUND FALSE)
 endif()
 
 # Sol2
-find_path(SOL2_INCLUDE_DIR sol/sol.hpp)
+set(SOL2_INCLUDE_DIR ${THIRD_PARTY_DIR}/sol2/include)
 
 # libltdl
-find_library(LTDL_LIBRARY ltdl)
-find_path(LTDL_INCLUDE_DIR ltdl.h)
+set(LTDL_INCLUDE_DIR ${THIRD_PARTY_DIR}/libltdl)
+set(LTDL_LIBRARY_DIR ${THIRD_PARTY_DIR}/libltdl/.libs)
+find_library(LTDL_LIBRARY ltdl PATHS ${LTDL_LIBRARY_DIR} NO_DEFAULT_PATH)
+if(NOT LTDL_LIBRARY)
+    message(WARNING "libltdl not built, module loading will not be available")
+endif()
 
 # rpclib
-find_path(RPCLIB_INCLUDE_DIR rpc/server.h)
-find_library(RPCLIB_LIBRARY rpc)
+set(RPCLIB_INCLUDE_DIR ${THIRD_PARTY_DIR}/rpclib/include)
+set(RPCLIB_LIBRARY_DIR ${THIRD_PARTY_DIR}/rpclib/build)
+find_library(RPCLIB_LIBRARY rpc PATHS ${RPCLIB_LIBRARY_DIR} NO_DEFAULT_PATH)
+if(NOT RPCLIB_LIBRARY)
+    message(WARNING "rpclib not built, RPC functionality will not be available")
+endif()
 
-# PEGTL
-set(PEGTL_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/third_party/PEGTL/include)
+# NNG (for future IPC)
+set(NNG_INCLUDE_DIR ${THIRD_PARTY_DIR}/nng/include)
+set(NNG_LIBRARY_DIR ${THIRD_PARTY_DIR}/nng/build)
+
+# jemalloc (optional)
+set(JEMALLOC_INCLUDE_DIR ${THIRD_PARTY_DIR}/jemalloc/include)
+
+# libclipboard (optional)
+set(LIBCLIPBOARD_INCLUDE_DIR ${THIRD_PARTY_DIR}/libclipboard/include)
 
 # Include directories
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/src
-    ${SODIUM_INCLUDE_DIRS}
+    ${SODIUM_INCLUDE_DIR}
     ${MSGPACK_INCLUDE_DIR}
     ${CLI11_INCLUDE_DIR}
     ${PEGTL_INCLUDE_DIR}
-    ${XAPIAN_INCLUDE_DIRS}
-    ${LUA_INCLUDE_DIRS}
+    ${XAPIAN_INCLUDE_DIR}
+    ${LUA_INCLUDE_DIR}
     ${SOL2_INCLUDE_DIR}
     ${LTDL_INCLUDE_DIR}
     ${RPCLIB_INCLUDE_DIR}
+    ${NNG_INCLUDE_DIR}
+    ${JEMALLOC_INCLUDE_DIR}
+    ${LIBCLIPBOARD_INCLUDE_DIR}
+)
+
+# Link directories
+link_directories(
+    ${SODIUM_LIBRARY_DIR}
+    ${XAPIAN_LIBRARY_DIR}
+    ${LUA_LIBRARY_DIR}
+    ${LTDL_LIBRARY_DIR}
+    ${RPCLIB_LIBRARY_DIR}
+    ${NNG_LIBRARY_DIR}
 )
 
 # Stage 1: Core Vault + Crypto
@@ -83,7 +125,7 @@ if(BUILD_STAGE_1)
     )
     
     target_link_libraries(passdoq_stage1
-        ${SODIUM_LIBRARIES}
+        ${SODIUM_LIBRARY}
     )
     
     # Tests for Stage 1
@@ -160,7 +202,7 @@ if(BUILD_STAGE_3 AND BUILD_STAGE_1 AND XAPIAN_FOUND)
     
     target_link_libraries(passdoq_stage3
         passdoq_stage1
-        ${XAPIAN_LIBRARIES}
+        ${XAPIAN_LIBRARY}
     )
     
     # Link stage3 to main executable if stage2 is built
@@ -199,7 +241,7 @@ if(BUILD_STAGE_4 AND BUILD_STAGE_1)
     # Add Lua support if available
     if(LUA_FOUND AND SOL2_INCLUDE_DIR)
         list(APPEND STAGE4_SOURCES src/lua.cpp)
-        list(APPEND STAGE4_LIBS ${LUA_LIBRARIES})
+        list(APPEND STAGE4_LIBS ${LUA_LIBRARY})
     else()
         message(WARNING "Lua or Sol2 not found, Lua scripting will not be available")
     endif()
@@ -227,10 +269,11 @@ if(BUILD_STAGE_4 AND BUILD_STAGE_1)
         
         target_include_directories(ephemeral_datakey PRIVATE
             ${CMAKE_SOURCE_DIR}/include
+            ${SODIUM_INCLUDE_DIR}
         )
         
         target_link_libraries(ephemeral_datakey
-            ${SODIUM_LIBRARIES}
+            ${SODIUM_LIBRARY}
         )
         
         set_target_properties(ephemeral_datakey PROPERTIES
@@ -389,3 +432,21 @@ install(DIRECTORY examples/scripts/
     DESTINATION share/passdoq/scripts
     FILES_MATCHING PATTERN "*.lua"
 )
+
+# Print configuration summary
+message(STATUS "")
+message(STATUS "Passdoq Configuration Summary:")
+message(STATUS "  Build Stage 1 (Core): ${BUILD_STAGE_1}")
+message(STATUS "  Build Stage 2 (CLI): ${BUILD_STAGE_2}")
+message(STATUS "  Build Stage 3 (Search): ${BUILD_STAGE_3}")
+message(STATUS "  Build Stage 4 (Modules): ${BUILD_STAGE_4}")
+message(STATUS "  Build Stage 5 (Services): ${BUILD_STAGE_5}")
+message(STATUS "  Build Tests: ${BUILD_TESTS}")
+message(STATUS "")
+message(STATUS "Third-party Dependencies:")
+message(STATUS "  libsodium: ${SODIUM_LIBRARY}")
+message(STATUS "  Xapian: ${XAPIAN_FOUND}")
+message(STATUS "  Lua: ${LUA_FOUND}")
+message(STATUS "  libltdl: ${LTDL_LIBRARY}")
+message(STATUS "  rpclib: ${RPCLIB_LIBRARY}")
+message(STATUS "")
